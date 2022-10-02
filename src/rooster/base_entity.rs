@@ -1,21 +1,65 @@
 use core::panic;
 use mysql::{*};
 
-pub trait RoosterEntityInterface {
+pub trait EntityInterface {
     fn field_names(&self) -> &'static [&'static str];
     fn field_by_name(&mut self, f_name: &str) -> Box<&mut dyn RoosterAtomicTypeInterface>;
     fn class_name(&self) -> String;
-} 
+    fn get_relation_vec(&mut self, v_name: &str) -> Vec<Box<dyn EntityInterface>>;
+    fn get_relations(&self) -> &'static [&'static str];
+}
+
+
+#[derive(Default)]
+pub struct Relation { 
+    container: Vec<Box<dyn EntityInterface>>,
+    join_on: String,
+    table: String,
+}
+
+
+pub fn create_entity_from_row<T> (row: Row) -> Box<T> 
+where T: EntityInterface + Default { 
+    let columns = row.columns_ref();
+
+    let mut entity : Box<T> = Box::new(Default::default());
+
+    let names = entity.field_names();
+
+    for i in 0..columns.len() { 
+        let column  = &columns[i];
+        let column_name_str = column.name_str();
+        let field_in_entity = names.iter().any(|&x| x == column_name_str);
+
+        if !field_in_entity { 
+            log::warn!("Omitted field {}", column_name_str);
+            continue;
+        }
+
+        let value = entity.field_by_name(&column_name_str);
+
+        value.load_from_row(&row, i);
+        print!("\n");
+    }
+
+    return entity;
+}
+
 
 #[macro_export]
 macro_rules! RoosterEntity {
-    (pub struct $name:ident { $($fname:ident : $ftype:ty),* }) => {
-        #[derive(Debug, Default)]
+    (pub struct $name:ident {
+        FIELDS $($fname:ident : $ftype:ty ),+;
+        RELATIONS  $($vname:ident : $vtype:ty ),*;
+    }
+    ) => {
+        #[derive(Default)]
         pub struct $name {
-            $(pub $fname : $ftype),*
+            $(pub $fname : $ftype,)*
+            $(pub $vname : $vtype,)*
         }
 
-        impl RoosterEntityInterface for $name {
+        impl EntityInterface for $name {
             fn field_names(&self) -> &'static [&'static str] {
                 static NAMES: &'static [&'static str] = &[$(stringify!($fname)),*];
                 NAMES
@@ -28,6 +72,21 @@ macro_rules! RoosterEntity {
                     _ => panic!("Panik!"),
                 }
             }
+
+
+            fn get_relations(&self) -> &'static [&'static str] { 
+                static NAMES: &'static [&'static str] = &[$(stringify!($vname)),*];
+                NAMES
+            }
+
+            fn get_relation_vec(&mut self, v_name: &str) -> Vec<Box<dyn EntityInterface>> {
+
+                match v_name {
+                    $ ( stringify!($vname) => return vec![],)*
+                    _ => panic!("Panik!"),
+                }
+            }
+
 
             fn class_name(&self) -> String { 
                 return String::from(stringify!($name));
@@ -46,41 +105,7 @@ pub trait RoosterAtomicTypeInterface {
 }
 
 
-impl RoosterAtomicTypeInterface for Vec<Box<dyn RoosterAtomicTypeInterface>> {
-    fn to_bytes(&mut self) -> Vec<u8> {
-        todo!()
-    }
 
-    fn from_bytes(&mut self, bytes : Vec<u8> ) {
-        todo!()
-    }
-
-    fn load_from_row(&mut self, row : &Row, idx: usize) {
-        todo!()
-    }
-
-    fn to_sql_str(&mut self) -> String {
-        todo!()
-    }
-}
-
-impl RoosterAtomicTypeInterface for dyn RoosterEntityInterface {
-    fn to_bytes(&mut self) -> Vec<u8> {
-        todo!()
-    }
-
-    fn from_bytes(&mut self, bytes : Vec<u8> ) {
-        todo!()
-    }
-
-    fn load_from_row(&mut self, row : &Row, idx: usize) {
-        todo!()
-    }
-
-    fn to_sql_str(&mut self) -> String {
-        todo!()
-    }
-}
 
 impl RoosterAtomicTypeInterface for String {
     fn to_bytes(&mut self) -> Vec<u8> {

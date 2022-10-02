@@ -16,7 +16,7 @@ impl ConnectionData {
     }
 
 
-    pub fn toUrl(&self) -> String { 
+    pub fn to_url(&self) -> String { 
         return format!("mysql://{}:{}@{}:{}/test", self.u_name, self.u_passwd, self.host, self.port);
     }
 }

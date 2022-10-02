@@ -1,33 +1,37 @@
 
 use core::panic;
-use mysql::{params, Params};
 use simple_logger::SimpleLogger;
 pub mod rooster;
-use rooster::{query::{SQLZygote}, connection::{ConnectionData}, Rooster, base_entity::{*}};
+use rooster::{connection::{ConnectionData}, Rooster, base_entity::{*}, query::*};
 
 
 RoosterEntity!(
     pub struct TestSub { 
+        FIELDS
         id: u32,
-        sub_name: String
+        sub_name: String;
+        RELATIONS;
     }
 );
 
 
 RoosterEntity! {
-    pub struct Test { 
+    pub struct Test {
+        FIELDS
         id: u32,
-        name: String,
-        sub : TestSub
+        name: String;
+        RELATIONS
+        subs: Relation;
     }
 }
 
 fn main() {
     SimpleLogger::new().init().unwrap();
 
+
     let conn_data = ConnectionData::new(
-        String::from("pnsv"),
-        String::from("pnsvpnsv"),
+        String::from("michal"),
+        String::from("michal"),
         None,
         None
     );
@@ -36,20 +40,11 @@ fn main() {
     let mut rooster = Rooster::new(conn_data, None);
     rooster.connect();
 
-    let values: Vec<Box<Test>> = rooster.get("Test").execute().unwrap(); 
-    let params: Params = params! { 
-        
-    };
 
-
-    for mut val in values { 
-        println!("{:?}", val);
-
-        let obj: &mut Test = val.as_mut();
-        obj.name += "12";
-        obj.id = 4 + obj.id;
-
-        rooster.save(Box::new(obj));
-    }
+    let query  = eq("id", "2")
+    .and(eq("name", " 'balls' ")
+    .or(eq("bussy", " 'sussy' ").or(eq("name", "'cockerton'"))));
+    
+    let values: Vec<Box<Test>> = rooster.get("Test")._where(query).execute().unwrap(); 
 
 }

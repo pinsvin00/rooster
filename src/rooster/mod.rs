@@ -1,10 +1,10 @@
 
 use core::panic;
-use std::{collections::HashMap, vec, ops::{Deref, Add}, fmt::format};
+use std::vec;
 use mysql::{*, prelude::*};
 
-use self::{config::Config, query::{SQLZygote, Operation, SQLOperation}, base_entity::RoosterEntityInterface};
-
+use self::{config::Config, query::{SQLZygote, Operation, SQLOperation}, base_entity::{EntityInterface, create_entity_from_row}};
+use self::{query::Q};
 
 pub mod connection;
 pub mod query;
@@ -30,7 +30,7 @@ impl Rooster {
         }
     }
     pub fn connect(&mut self) {
-        let url = self.conn_data.toUrl();
+        let url = self.conn_data.to_url();
         let urlstr = &url[..];
         let result = Pool::new(urlstr);
         self.connection_pool = match result {
@@ -39,7 +39,7 @@ impl Rooster {
         };
     }
 
-    fn generate_sql_obj_template(&self, entity: Box< &mut dyn RoosterEntityInterface>) -> String { 
+    fn generate_sql_obj_template(&self, entity: Box< &mut dyn EntityInterface>) -> String { 
         let names = entity.field_names();
         
         let mut columns_template = String::new();
@@ -69,14 +69,16 @@ impl SQLZygote for Rooster {
         self.queue.push(Operation {
             operation: SQLOperation::SELECT(String::from(table_name)),
             params: Params::Empty,
+            query: None,
         });
         return self;
     }
 
-    fn _where(&mut self, _params: Params) -> &mut Self {
+    fn _where(&mut self, _params: Q) -> &mut Self {
         self.queue.push(Operation {
             operation: SQLOperation::WHERE,
-            params: _params,
+            params: Params::Empty,
+            query : Some(_params),
         });
 
         return self;
@@ -89,6 +91,7 @@ impl SQLZygote for Rooster {
             params: params! {
                 "table_name" => table_name,
             },
+            query : None,
         });
         return self;
     }
@@ -99,12 +102,12 @@ impl SQLZygote for Rooster {
             params: params! {
                 "table_name" => table_name,
             },
-
+            query: None,
         });
         return self;
     }
 
-    fn save(&mut self, entity: Box<(&mut dyn base_entity::RoosterEntityInterface)> ) {                 
+    fn save(&mut self, entity: Box<&mut dyn base_entity::EntityInterface> ) {                 
         let query = self.generate_sql_obj_template(entity);
         let query_cpy = Clone::clone(&query);
 
@@ -128,7 +131,7 @@ impl SQLZygote for Rooster {
 
 
     fn execute<T>(&mut self) -> Option<Vec<Box<T>>> where 
-        T: RoosterEntityInterface + Default
+        T: EntityInterface + Default
     {
         let conn = self.connection_pool.as_ref().unwrap().get_conn();
 
@@ -149,18 +152,8 @@ impl SQLZygote for Rooster {
                     raw += &chunk;
                 },
                 SQLOperation::WHERE => {
-                    let args = &oper.params;
-                    let params = match args {
-                        Params::Named(map) => map, 
-                        Params::Positional(_) => todo!("todo uwu"), 
-                        Params::Empty => todo!("todo uwu"),
-                    };
-
-                    let mut where_raw = String::new();
-                    for (k,v) in params { 
-                        let fragment = format!("{} = {} " , k, v.as_sql(true));
-                        where_raw.push_str(fragment.as_str());
-                    }
+                    let where_raw = oper.query.as_ref().unwrap().to_sql();
+                    raw.push_str(" WHERE ");
                     raw.push_str(where_raw.as_str());
                     
                 },
@@ -172,34 +165,10 @@ impl SQLZygote for Rooster {
 
         log::info!("Rooster running query with sql: {}", raw);
 
-
         let mut entities = Vec::new();
         conn.query_iter(raw).unwrap().for_each(|row| {
             let u_row = row.unwrap();
-            let columns = u_row.columns_ref();
-
-
-            let mut entity : Box<T> = Box::new(Default::default());
-            let names = entity.field_names();
-
-            for i in 0..columns.len() { 
-
-
-                let column  = &columns[i];
-                let column_name_str = column.name_str();
-                let field_in_entity = names.iter().any(|&x| x == column_name_str);
-
-                if !field_in_entity { 
-                    log::warn!("Omitted field {}", column_name_str);
-                    continue;
-                }
-
-                let value = entity.field_by_name(&column_name_str);
-                value.load_from_row(&u_row, i);
-
-                print!("\n");
-
-            }
+            let entity = create_entity_from_row(u_row);
             entities.push(entity);
 
         });
