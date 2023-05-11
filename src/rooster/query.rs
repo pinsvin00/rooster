@@ -10,7 +10,7 @@ pub enum SQLOperation {
     UPDATE,
     WHERE,
     DELETE,
-    JOIN,
+    JOIN(String, String),
     ORDERBY
 }
 

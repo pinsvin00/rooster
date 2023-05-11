@@ -4,7 +4,6 @@ use simple_logger::SimpleLogger;
 pub mod rooster;
 use rooster::{connection::{ConnectionData}, Rooster, base_entity::{*}, query::*};
 
-
 RoosterEntity!(
     pub struct TestSub { 
         FIELDS
@@ -21,21 +20,21 @@ RoosterEntity! {
         id: u32,
         name: String;
         RELATIONS
-        subs: Relation;
+        subs: Relation { 
+            join_on: String::from("id"),
+            table: String::from("sus"),
+        };
     }
 }
 
 fn main() {
     SimpleLogger::new().init().unwrap();
-
-
     let conn_data = ConnectionData::new(
         String::from("michal"),
         String::from("michal"),
         None,
         None
     );
-
 
     let mut rooster = Rooster::new(conn_data, None);
     rooster.connect();

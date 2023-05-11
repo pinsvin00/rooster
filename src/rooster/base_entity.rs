@@ -1,20 +1,49 @@
 use core::panic;
 use mysql::{*};
+use mysql::Params;
 
 pub trait EntityInterface {
     fn field_names(&self) -> &'static [&'static str];
     fn field_by_name(&mut self, f_name: &str) -> Box<&mut dyn RoosterAtomicTypeInterface>;
     fn class_name(&self) -> String;
-    fn get_relation_vec(&mut self, v_name: &str) -> Vec<Box<dyn EntityInterface>>;
+    fn get_relation_vec(&mut self, v_name: &str) -> Relation;
     fn get_relations(&self) -> &'static [&'static str];
 }
 
 
-#[derive(Default)]
+//map to doesn't have to be necesarilly self mutable, todo
+pub fn map_to<T>(entity: &mut Box<dyn EntityInterface>) -> T where T: EntityInterface + Default {
+    let mut value = T::default();
+
+    let fields = value.field_names();
+    for field_name in fields { 
+        let field_val = value.field_by_name(field_name);
+        let field_ref = entity.field_by_name(field_name);
+        field_val.load_from_bytes(field_ref.to_bytes());
+    }
+
+    return value;
+}
+
+
+#[derive(Default, Clone)]
 pub struct Relation { 
-    container: Vec<Box<dyn EntityInterface>>,
-    join_on: String,
-    table: String,
+    pub join_on: String,
+    pub table: String,
+}
+
+impl Relation { 
+    pub fn get_objs<T> (&mut self)-> Vec<T> where T: EntityInterface + Default {
+        let mut vec: Vec<T> = vec![];
+        // for el in &mut self.container {
+        //     //cant convert to upper!
+        //     let mapped : T = map_to(el);        
+        //     vec.push(mapped);
+        // }
+        return vec;
+    }
+
+
 }
 
 
@@ -50,13 +79,12 @@ where T: EntityInterface + Default {
 macro_rules! RoosterEntity {
     (pub struct $name:ident {
         FIELDS $($fname:ident : $ftype:ty ),+;
-        RELATIONS  $($vname:ident : $vtype:ty ),*;
+        RELATIONS  $($vname:ident : $params:expr ),*;
     }
     ) => {
         #[derive(Default)]
         pub struct $name {
             $(pub $fname : $ftype,)*
-            $(pub $vname : $vtype,)*
         }
 
         impl EntityInterface for $name {
@@ -79,10 +107,10 @@ macro_rules! RoosterEntity {
                 NAMES
             }
 
-            fn get_relation_vec(&mut self, v_name: &str) -> Vec<Box<dyn EntityInterface>> {
+            fn get_relation_vec(&mut self, v_name: &str) -> Relation {
 
                 match v_name {
-                    $ ( stringify!($vname) => return vec![],)*
+                    $ ( stringify!($vname) => return $params,)*
                     _ => panic!("Panik!"),
                 }
             }
@@ -99,7 +127,7 @@ macro_rules! RoosterEntity {
 
 pub trait RoosterAtomicTypeInterface { 
     fn to_bytes(&mut self) -> Vec<u8>;
-    fn from_bytes(&mut self, bytes : Vec<u8> );
+    fn load_from_bytes(&mut self, bytes : Vec<u8> );
     fn load_from_row(&mut self, row : &Row, idx: usize);
     fn to_sql_str(&mut self) -> String;
 }
@@ -113,7 +141,7 @@ impl RoosterAtomicTypeInterface for String {
         return bytes;
     }
 
-    fn from_bytes(&mut self, bytes: Vec<u8>) {
+    fn load_from_bytes(&mut self, bytes: Vec<u8>) {
         self.clear();
         for byte in bytes { 
             self.push(byte as char);
@@ -122,7 +150,7 @@ impl RoosterAtomicTypeInterface for String {
 
     fn load_from_row(&mut self, row : &Row, idx: usize) {
         let bytes: Option<Vec<u8>> = row.get(idx);
-        self.from_bytes(bytes.unwrap());
+        self.load_from_bytes(bytes.unwrap());
     }
 
     fn to_sql_str(&mut self) -> String {
@@ -137,7 +165,7 @@ impl RoosterAtomicTypeInterface for u32 {
         return bytes;
     }
 
-    fn from_bytes(&mut self, bytes : Vec<u8> ) {
+    fn load_from_bytes(&mut self, bytes : Vec<u8> ) {
         if bytes.len() != 4 {
             panic!("Invalid u32 size, expected 4 bytes, received {} bytes!", bytes.len());
         }

@@ -3,6 +3,8 @@ use core::panic;
 use std::vec;
 use mysql::{*, prelude::*};
 
+use crate::rooster::base_entity::Relation;
+
 use self::{config::Config, query::{SQLZygote, Operation, SQLOperation}, base_entity::{EntityInterface, create_entity_from_row}};
 use self::{query::Q};
 
@@ -145,6 +147,19 @@ impl SQLZygote for Rooster {
 
         let mut raw = String::new();
 
+        let mut dummy = T::default();
+        let rels_str = dummy.get_relations();
+        for rel_str in rels_str { 
+            let sus = dummy.get_relation_vec(rel_str);
+            self.queue.push(Operation { 
+                params: Params::Empty,
+                operation: SQLOperation::JOIN(sus.table, sus.join_on),
+                query: None
+            })
+        }
+
+
+
         for (_, oper) in self.queue.iter().enumerate() { 
             match &oper.operation { 
                 SQLOperation::SELECT(table_name) => {
@@ -157,6 +172,9 @@ impl SQLZygote for Rooster {
                     raw.push_str(where_raw.as_str());
                     
                 },
+                SQLOperation::JOIN(table_name, column_name) => {
+                    raw.push_str(&format!(" INNER JOIN {} ON {}", table_name, column_name) );
+                }
                 _ => {
                     panic!("Invalid SQL Operation");
                 }
@@ -165,10 +183,13 @@ impl SQLZygote for Rooster {
 
         log::info!("Rooster running query with sql: {}", raw);
 
+
+
+
         let mut entities = Vec::new();
         conn.query_iter(raw).unwrap().for_each(|row| {
             let u_row = row.unwrap();
-            let entity = create_entity_from_row(u_row);
+            let mut entity: Box<T> = create_entity_from_row(u_row);
             entities.push(entity);
 
         });
